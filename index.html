@@ -112,7 +112,7 @@ function load(u){return new Promise(function(r,e){var s=document.createElement('
 function sdk(){if(loaded)return Promise.resolve();if(loading)return loading;
 loading=Promise.resolve().then(function(){if(window.firebase&&firebase.auth&&firebase.firestore)return;
 return['app','auth','firestore'].reduce(function(p,n){return p.then(function(){return load('https://www.gstatic.com/firebasejs/'+V+'/firebase-'+n+'-compat.js')})},Promise.resolve())}).then(function(){loaded=true},function(e){loading=null;throw e});return loading}
-function app(){var a=firebase.apps.filter(function(x){return x.name===APP})[0];return a||firebase.initializeApp(CFG,APP)}
+function app(){return firebase.apps.length?firebase.app():firebase.initializeApp(CFG)}
 function okMail(u){return!!u&&!u.isAnonymous&&u.emailVerified&&/@([a-z0-9-]+\.)*belajar\.id$/i.test(u.email||'')}
 function emsg(e){var c=e&&e.code||'';
 if(c=='auth/popup-blocked'||c=='auth/cancelled-popup-request')return'Jendela login diblokir browser. Izinkan pop-up untuk situs ini, lalu klik tombol "Masuk MEKAR" di bagian atas.';
@@ -123,11 +123,12 @@ if(c=='permission-denied')return'Ditolak oleh aturan Firestore MEKAR. Pastikan k
 return(e&&e.message)||String(e||'Kesalahan tidak diketahui')}
 function current(){return sdk().then(function(){var au=app().auth();return new Promise(function(res,rej){var off=au.onAuthStateChanged(function(u){off();res(u&&okMail(u)?u:null)},rej)})})}
 function login(){return sdk().then(function(){var a=app(),p=new firebase.auth.GoogleAuthProvider();p.setCustomParameters({prompt:'select_account'});
-return a.auth().signInWithPopup(p).then(function(c){var u=c.user;if(!okMail(u))return a.auth().signOut().then(function(){throw new Error('Gunakan akun belajar.id yang sudah terverifikasi.')});return u})}).catch(function(e){throw new Error(emsg(e))})}
+return a.auth().signInWithPopup(p).catch(function(e){if(e&&(e.code=='auth/popup-blocked'||e.code=='auth/operation-not-supported-in-this-environment'))return a.auth().signInWithRedirect(p).then(function(){return null});throw e}).then(function(c){var u=c&&c.user;if(!u)return null;if(!okMail(u))return a.auth().signOut().then(function(){throw new Error('Gunakan akun belajar.id yang sudah terverifikasi.')});return u})}).catch(function(e){throw new Error(emsg(e))})}
 function logout(){return sdk().then(function(){return app().auth().signOut()})}
 window.__mekarAuth={current:current,login:login,logout:logout};
+sdk().then(function(){return app().auth().getRedirectResult()}).then(function(){if(window.__mekarRefresh)window.__mekarRefresh()}).catch(function(e){console.warn('MEKAR redirect:',e&&e.code||e)});
 window.__mekarPushTp=function(rec){
-return current().then(function(u){return u||login()}).then(function(u){
+return current().then(function(u){if(!u)throw new Error('Belum masuk MEKAR. Klik tombol "Masuk MEKAR" di bagian atas dulu, lalu ulangi sinkronisasi.');return u}).then(function(u){
 var id=String(rec.id).replace(/[\/\s]/g,'_').slice(0,200),d=JSON.stringify(rec);
 if(d.length>900000)throw new Error('Data TP terlalu besar untuk dikirim.');
 return app().firestore().collection('mekar_tp').doc(id).set({d:d,del:false,ts:Date.now(),by:u.displayName||u.email||''})}).catch(function(e){throw new Error(emsg(e))})};
